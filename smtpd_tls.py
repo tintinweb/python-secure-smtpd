@@ -38,6 +38,11 @@ Options:
     -s
         explicit RFC 3207 STARTTLS mode (cannot be combined with --tls) 
 
+    --auth
+    -a
+        authentification with AUTH PLAIN, set as dict like
+        '{"user":"username","password":"secret"}'
+
     --help
     -h
         Print this message and exit.
@@ -48,6 +53,7 @@ If localhost is not given then `localhost' is used, and if localport is not
 given then 8025 is used.  If remotehost is not given then `localhost' is used,
 and if remoteport is not given, then 25 is used.
 """
+import ast
 import sys
 import os
 import getopt
@@ -55,12 +61,25 @@ import asyncore, asynchat
 import ssl
 import smtpd
 
+from email.base64mime import encode as encode_base64
+
 __all__ = ["SMTPServer", "DebuggingServer", "PureProxy", "MailmanProxy"]
 
 __version__ = smtpd.__version__ + " (TLS and STARTTLS enabled)" 
 program = sys.argv[0]
 
 class SMTPChannel(smtpd.SMTPChannel):
+
+    def smtp_AUTH(self, arg):
+        user = self.__server.auth.get('user')
+        password = self.__server.auth.get('password')
+        s = encode_base64("\0%s\0%s" % (user, password), eol="")
+        if arg == 'PLAIN {}'.format(s):
+            self.push('235 Authentication successful')
+        else:
+            self.push(
+                '535 SMTP Authentication unsuccessful/'
+                'Bad username or password')
 
     def smtp_EHLO(self, arg):
         if not arg:
@@ -70,7 +89,8 @@ class SMTPChannel(smtpd.SMTPChannel):
         else:
             self.__greeting = arg
             if isinstance(self.__conn,ssl.SSLSocket):
-                self.push('250 %s' % self.__fqdn)
+                self.push('250-%s' % self.__fqdn)
+                self.push('250 AUTH PLAIN')
             else:
                 self.push('250-%s' % self.__fqdn)
                 self.push('250 STARTTLS')
@@ -96,13 +116,16 @@ class SMTPChannel(smtpd.SMTPChannel):
             self.push('454 TLS not available due to temporary reason')
 
 class SMTPServer(smtpd.SMTPServer):
-    def __init__(self, localaddr, remoteaddr, ssl_ctx=None, starttls=True):
+    def __init__(self, localaddr, remoteaddr, ssl_ctx=None, starttls=True, auth= False):
         self.ssl_ctx = ssl_ctx
         self.starttls = starttls
+        self.auth = auth
         smtpd.SMTPServer.__init__(self, localaddr, remoteaddr)
         print >> smtpd.DEBUGSTREAM, '\tTLS Mode: %s\n\tTLS Context: %s' % ('explicit (plaintext until STARTTLS)' if starttls else 'implicit (encrypted from the beginning)', 
                                                                            repr(ssl_ctx))
-        
+        if self.auth:
+            print >> smtpd.DEBUGSTREAM, '\tAUTH PLAIN Mode\n'
+
     def handle_accept(self):
         pair = self.accept()
         if pair is not None:
@@ -251,6 +274,7 @@ class Options:
     classname = 'PureProxy'
     sslctx = None
     starttls = True
+    auth = None
 
 def usage(code, msg=''):
     print >> sys.stderr, __doc__ % globals()
@@ -263,7 +287,7 @@ def parseargs():
     try:
         opts, args = getopt.getopt(
             sys.argv[1:], 'nVhc:dk:ts',
-            ['class=', 'nosetuid', 'version', 'help', 'debug', 'keyfile=', 'tls', 'starttls'])
+            ['class=', 'nosetuid', 'version', 'help', 'debug', 'keyfile=', 'tls', 'starttls', 'auth='])
     except getopt.error, e:
         usage(1, e)
 
@@ -287,6 +311,8 @@ def parseargs():
             options.starttls = False
         elif opt in ('-s', '--starttls'):
             options.starttls = True
+        elif opt in ('-a', '--auth'):
+            options.auth = ast.literal_eval(arg)
 
     # parse the rest of the arguments
     if len(args) < 1:
@@ -332,7 +358,7 @@ if __name__ == '__main__':
         import __main__ as mod
     class_ = getattr(mod, classname)
     proxy = class_((options.localhost, options.localport),
-                   (options.remotehost, options.remoteport), options.sslctx, options.starttls)
+                   (options.remotehost, options.remoteport), options.sslctx, options.starttls, options.auth)
     if options.setuid:
         try:
             import pwd
