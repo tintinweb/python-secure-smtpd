@@ -105,3 +105,38 @@ Implicit TLS via smtp port 465:
     ------------ END MESSAGE ------------
     Data: 'quit'
 
+Authentification with AUTH PLAIN:
+
+::
+
+    #> python -m smtpd_tls --debug -c DebuggingServer --starttls --keyfile=..server.pem --auth='{"user":"username","password":"secret"}' 0.0.0.1:465
+    DebuggingServer started at Fri Jan 19 11:57:42 2018
+            Local addr: ('0.0.0.0', 465)
+            Remote addr:('mail.somehost.com', 25)
+            TLS Mode: explicit (plaintext until STARTTLS)
+            TLS Context: <ssl.SSLContext object at 0x7f8fd8adbbb0>
+            AUTH PLAIN Mode
+    Incoming connection from ('192.168.139.1', 39983)
+    Peer: ('192.168.139.1', 39983)
+    Data: 'ehlo [192.168.139.1]'
+    Data: 'STARTTLS'
+    Peer: ('192.168.139.1', 39983) - negotiated TLS: ('ECDHE-RSA-AES256-GCM-SHA384', 'TLSv1/SSLv3', 256)
+    Data: 'ehlo [192.168.139.1]'
+    Data: 'AUTH PLAIN AHVzZXJuYW1lAHNlY3JldA=='
+    Data: 'mail FROM:<sender@example.com>'
+    ===> MAIL FROM:<sender@example.com>
+    sender: sender@example.com
+    Data: 'rcpt TO:<user@example.com>'
+    ===> RCPT TO:<user@example.com>
+    recips: ['user@example.com']
+    Data: 'data'
+    Data: "From: sender@example.com\r\nTo: user@example.com\r\nSubject: Hello!\r\n\r\nThis message was sent with Python's smtplib."
+    ---------- MESSAGE FOLLOWS ----------
+    From: sender@example.com
+    To: user@example.com
+    Subject: Hello!
+    X-Peer: 192.168.139.1
+
+    This message was sent with Python's smtplib.
+    ------------ END MESSAGE ------------
+    Data: 'quit'
