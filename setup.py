@@ -3,8 +3,11 @@
 import os, sys
 from setuptools import setup
 
-if not (sys.version_info.major==2 and sys.version_info.minor>=7):
+if sys.version_info.major < 2 or (sys.version_info.major == 2 and sys.version_info.minor < 7):
     sys.exit("Sorry, Python < 2.7 is not supported due to missing functionality in the built-in smtpd module")
+
+if sys.version_info.major == 2 and sys.version_info.minor == 7 and sys.version_info.micro < 9:
+    sys.exit("Sorry, Python < 2.7.9 is not supported due to missing SSLContext functionality in the built-in ssl module")
 
 def read(fname):
     return open(os.path.join(os.path.dirname(__file__), fname)).read()
