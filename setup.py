@@ -3,7 +3,7 @@
 import os, sys
 from setuptools import setup
 
-if not (sys.version_info.major==2 and sys.version_info.minor>=7):
+if sys.version_info.major < 2 or (sys.version_info.major == 2 and sys.version_info.minor < 7):
     sys.exit("Sorry, Python < 2.7 is not supported due to missing functionality in the built-in smtpd module")
 
 def read(fname):
