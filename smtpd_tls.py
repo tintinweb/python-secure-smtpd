@@ -1,6 +1,8 @@
 #! /usr/bin/env python
 # -*- coding: UTF-8 -*-
+
 # Author : tintinweb@oststrom.com <github.com/tintinweb>
+
 """An RFC 2821 smtp proxy with implicit TLS and explicit STARTTLS (RFC 3207) support
 
 Usage: %(program)s [options] [localhost:localport [remotehost:remoteport]]
@@ -48,12 +50,17 @@ If localhost is not given then `localhost' is used, and if localport is not
 given then 8025 is used.  If remotehost is not given then `localhost' is used,
 and if remoteport is not given, then 25 is used.
 """
-import sys
-import os
+
+from __future__ import absolute_import, division, print_function
+__metaclass__ = type
+
+import asynchat
+import asyncore
 import getopt
-import asyncore, asynchat
-import ssl
+import os
 import smtpd
+import ssl
+import sys
 
 __all__ = ["SMTPServer", "DebuggingServer", "PureProxy", "MailmanProxy"]
 
@@ -91,7 +98,7 @@ class SMTPChannel(smtpd.SMTPChannel):
             self.__mailfrom = None
             self.__rcpttos = []
             self.__data = ''
-            print >> smtpd.DEBUGSTREAM, 'Peer: %s - negotiated TLS: %s' % (repr(self.__addr), repr(self.__conn.cipher()))
+            print('Peer: %s - negotiated TLS: %s' % (repr(self.__addr), repr(self.__conn.cipher())), file=smtpd.DEBUGSTREAM)
         else:
             self.push('454 TLS not available due to temporary reason')
 
@@ -100,17 +107,16 @@ class SMTPServer(smtpd.SMTPServer):
         self.ssl_ctx = ssl_ctx
         self.starttls = starttls
         smtpd.SMTPServer.__init__(self, localaddr, remoteaddr)
-        print >> smtpd.DEBUGSTREAM, '\tTLS Mode: %s\n\tTLS Context: %s' % ('explicit (plaintext until STARTTLS)' if starttls else 'implicit (encrypted from the beginning)', 
-                                                                           repr(ssl_ctx))
-        
+        print('\tTLS Mode: %s\n\tTLS Context: %s' % ('explicit (plaintext until STARTTLS)' if starttls else 'implicit (encrypted from the beginning)', repr(ssl_ctx)), file=smtpd.DEBUGSTREAM)
+
     def handle_accept(self):
         pair = self.accept()
         if pair is not None:
             conn, addr = pair
-            print >> smtpd.DEBUGSTREAM, 'Incoming connection from %s' % repr(addr)
+            print('Incoming connection from %s' % repr(addr), file=smtpd.DEBUGSTREAM)
             if self.ssl_ctx and not self.starttls:
                 conn = self.ssl_ctx.wrap_socket(conn, server_side=True)
-                print >> smtpd.DEBUGSTREAM, 'Peer: %s - negotiated TLS: %s' % (repr(addr), repr(conn.cipher()))
+                print('Peer: %s - negotiated TLS: %s' % (repr(addr), repr(conn.cipher())), file=smtpd.DEBUGSTREAM)
             channel = SMTPChannel(self, conn, addr)
 
 class DebuggingServer(SMTPServer):
@@ -118,14 +124,14 @@ class DebuggingServer(SMTPServer):
     def process_message(self, peer, mailfrom, rcpttos, data):
         inheaders = 1
         lines = data.split('\n')
-        print '---------- MESSAGE FOLLOWS ----------'
+        print('---------- MESSAGE FOLLOWS ----------')
         for line in lines:
             # headers first
             if inheaders and not line:
-                print 'X-Peer:', peer[0]
+                print('X-Peer:', peer[0])
                 inheaders = 0
-            print line
-        print '------------ END MESSAGE ------------'
+            print(line)
+        print('------------ END MESSAGE ------------')
 
 class PureProxy(SMTPServer):
     def process_message(self, peer, mailfrom, rcpttos, data):
@@ -140,7 +146,7 @@ class PureProxy(SMTPServer):
         data = NEWLINE.join(lines)
         refused = self._deliver(mailfrom, rcpttos, data)
         # TBD: what to do with refused addresses?
-        print >> DEBUGSTREAM, 'we got some refusals:', refused
+        print('we got some refusals:', refused, file=DEBUGSTREAM)
 
     def _deliver(self, mailfrom, rcpttos, data):
         import smtplib
@@ -152,11 +158,11 @@ class PureProxy(SMTPServer):
                 refused = s.sendmail(mailfrom, rcpttos, data)
             finally:
                 s.quit()
-        except smtplib.SMTPRecipientsRefused, e:
-            print >> DEBUGSTREAM, 'got SMTPRecipientsRefused'
+        except smtplib.SMTPRecipientsRefused as e:
+            print('got SMTPRecipientsRefused', file=DEBUGSTREAM)
             refused = e.recipients
-        except (socket.error, smtplib.SMTPException), e:
-            print >> DEBUGSTREAM, 'got', e.__class__
+        except (socket.error, smtplib.SMTPException) as e:
+            print('got', e.__class__, file=DEBUGSTREAM)
             # All recipients were refused.  If the exception had an associated
             # error code, use it.  Otherwise,fake it with a non-triggering
             # exception code.
@@ -204,11 +210,11 @@ class MailmanProxy(PureProxy):
         for rcpt, listname, command in listnames:
             rcpttos.remove(rcpt)
         # If there's any non-list destined recipients left,
-        print >> DEBUGSTREAM, 'forwarding recips:', ' '.join(rcpttos)
+        print('forwarding recips:', ' '.join(rcpttos), file=DEBUGSTREAM)
         if rcpttos:
             refused = self._deliver(mailfrom, rcpttos, data)
             # TBD: what to do with refused addresses?
-            print >> DEBUGSTREAM, 'we got refusals:', refused
+            print('we got refusals:', refused, file=DEBUGSTREAM)
         # Now deliver directly to the list commands
         mlists = {}
         s = StringIO(data)
@@ -221,7 +227,7 @@ class MailmanProxy(PureProxy):
         if not msg.getheader('date'):
             msg['Date'] = time.ctime(time.time())
         for rcpt, listname, command in listnames:
-            print >> DEBUGSTREAM, 'sending message to', rcpt
+            print('sending message to', rcpt, file=DEBUGSTREAM)
             mlist = mlists.get(listname)
             if not mlist:
                 mlist = MailList.MailList(listname, lock=0)
@@ -253,18 +259,18 @@ class Options:
     starttls = True
 
 def usage(code, msg=''):
-    print >> sys.stderr, __doc__ % globals()
+    print(__doc__ % globals(), file=sys.stderr)
     if msg:
-        print >> sys.stderr, msg
+        print(msg, file=sys.stderr)
     sys.exit(code)
-    
+
 def parseargs():
     global DEBUGSTREAM
     try:
         opts, args = getopt.getopt(
             sys.argv[1:], 'nVhc:dk:ts',
             ['class=', 'nosetuid', 'version', 'help', 'debug', 'keyfile=', 'tls', 'starttls'])
-    except getopt.error, e:
+    except getopt.error as e:
         usage(1, e)
 
     options = Options()
@@ -272,7 +278,7 @@ def parseargs():
         if opt in ('-h', '--help'):
             usage(0)
         elif opt in ('-V', '--version'):
-            print >> sys.stderr, __version__
+            print(__version__, file=sys.stderr)
             sys.exit(0)
         elif opt in ('-n', '--nosetuid'):
             options.setuid = 0
@@ -337,16 +343,14 @@ if __name__ == '__main__':
         try:
             import pwd
         except ImportError:
-            print >> sys.stderr, \
-                  'Cannot import module "pwd"; try running with -n option.'
+            print('Cannot import module "pwd"; try running with -n option.', file=sys.stderr)
             sys.exit(1)
         nobody = pwd.getpwnam('nobody')[2]
         try:
             os.setuid(nobody)
-        except OSError, e:
+        except OSError as e:
             if e.errno != errno.EPERM: raise
-            print >> sys.stderr, \
-                  'Cannot setuid "nobody"; try running with -n option.'
+            print('Cannot setuid "nobody"; try running with -n option.', file=sys.stderr)
             sys.exit(1)
     try:
         asyncore.loop()
